@@ -1,0 +1,57 @@
+[package]
+name = "rosetta-mail"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "client"
+path = "src/bin/client.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+prost = "0.13"
+bytes = "1"
+
+# TLS and cryptography
+rustls = { version = "0.23", features = ["ring"] }
+tokio-rustls = "0.26"
+webpki-roots = "0.26"
+rustls-pemfile = "2"
+rcgen = "0.13"
+rsa = { version = "0.9", features = ["sha2"] }
+sha2 = "0.10"
+rand = "0.8"
+base64 = "0.22"
+x509-parser = "0.16"
+ring = "0.17"
+hex = "0.4"
+pem = "3"
+argon2 = "0.5"
+
+# HTTP client for Cloudflare API and ACME
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async utilities
+async-trait = "0.1"
+
+# Date/time and UUID for email storage
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+
+# Configuration
+toml = "0.8"
+hickory-resolver = { version = "0.25.2", features = ["dnssec-ring"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+prost-build = "0.13"

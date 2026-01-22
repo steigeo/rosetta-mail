@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package tunnel;
+
+// Wrapper message for all communication over websocket
+message TunnelMessage {
+    oneof payload {
+        NewConnection new_connection = 1;
+        Data data = 2;
+        CloseConnection close_connection = 3;
+        // Client -> Server: Request outbound connection
+        OutboundConnectRequest outbound_connect_request = 4;
+        // Server -> Client: Outbound connection result
+        OutboundConnectResponse outbound_connect_response = 5;
+    }
+}
+
+// Server -> Client: A new TCP connection has been established (inbound)
+message NewConnection {
+    uint64 connection_id = 1;
+    uint32 port = 2;
+    string remote_address = 3;
+}
+
+// Bidirectional: Data to be sent/received on a connection
+message Data {
+    uint64 connection_id = 1;
+    bytes payload = 2;
+}
+
+// Bidirectional: Close a connection
+message CloseConnection {
+    uint64 connection_id = 1;
+}
+
+// Client -> Server: Request to open an outbound TCP connection
+message OutboundConnectRequest {
+    uint64 connection_id = 1;  // Client-assigned ID for this connection
+    string host = 2;           // Target hostname or IP
+    uint32 port = 3;           // Target port (typically 25 for SMTP)
+}
+
+// Server -> Client: Result of outbound connection request
+message OutboundConnectResponse {
+    uint64 connection_id = 1;  // Same ID from the request
+    bool success = 2;          // Whether the connection was established
+    string error = 3;          // Error message if not successful
+    string remote_address = 4; // Resolved remote address if successful
+}
