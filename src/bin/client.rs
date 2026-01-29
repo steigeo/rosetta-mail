@@ -1,6 +1,7 @@
 use rosetta_mail::client;
 use rosetta_mail::client::config::hash_password;
 use std::io::{self, Write};
+use std::path::PathBuf;
 
 fn print_usage() {
     eprintln!("Usage: client [OPTIONS] [STORAGE_PATH]");
@@ -12,6 +13,9 @@ fn print_usage() {
     eprintln!();
     eprintln!("Arguments:");
     eprintln!("  STORAGE_PATH       Path to storage directory (default: current directory)");
+    eprintln!();
+    eprintln!("Environment:");
+    eprintln!("  TUNNEL_STORAGE_PATH  Alternative way to set storage path");
 }
 
 fn hash_password_interactive() {
@@ -57,6 +61,8 @@ fn hash_password_interactive() {
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();
     
+    let mut storage_path: Option<PathBuf> = None;
+    
     // Check for CLI options
     for arg in &args[1..] {
         match arg.as_str() {
@@ -77,7 +83,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 print_usage();
                 std::process::exit(1);
             }
-            _ => {}
+            path => {
+                // Non-option argument is the storage path
+                if storage_path.is_none() {
+                    storage_path = Some(PathBuf::from(path));
+                } else {
+                    eprintln!("Error: Multiple storage paths specified");
+                    print_usage();
+                    std::process::exit(1);
+                }
+            }
         }
     }
     
@@ -86,5 +101,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    client::run().await
+    client::run_with_storage_path(storage_path).await
 }

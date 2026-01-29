@@ -1,4 +1,4 @@
-use crate::client::config::{get_auth_key, get_config, get_server_url, get_storage_path, init_config};
+use crate::client::config::{get_auth_key, get_config, get_server_url, get_storage_path, init_config, set_storage_path};
 use crate::client::connections::ConnectionManager;
 use crate::client::handler::handle_server_message;
 use crate::client::init::initialize;
@@ -7,13 +7,19 @@ use crate::client::storage::EmailStorage;
 use crate::proto::TunnelMessage;
 use futures_util::{SinkExt, StreamExt};
 use prost::Message;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 /// Connect to the server and run the main client loop
-pub async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn run_with_storage_path(storage_path: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Set storage path override if provided
+    if let Some(path) = storage_path {
+        set_storage_path(path);
+    }
+    
     // Load configuration from config.toml (with env var overrides)
     let _config = init_config().await?;
     println!("Configuration loaded from {:?}", get_storage_path().join("config.toml"));
@@ -212,4 +218,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     println!("Disconnected from server");
     Ok(())
+}
+
+/// Connect to the server and run the main client loop (convenience wrapper)
+pub async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_with_storage_path(None).await
 }

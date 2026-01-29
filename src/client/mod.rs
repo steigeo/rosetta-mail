@@ -10,5 +10,5 @@ pub mod smtp;
 pub mod storage;
 pub mod tls;
 
-pub use connection::run;
+pub use connection::{run, run_with_storage_path};
 pub use storage::EmailStorage;

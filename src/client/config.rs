@@ -11,6 +11,14 @@ use argon2::{
 /// Global configuration instance
 static CONFIG: OnceLock<ClientConfig> = OnceLock::new();
 
+/// Storage path override (set from command line)
+static STORAGE_PATH_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Set the storage path override (must be called before get_storage_path)
+pub fn set_storage_path(path: PathBuf) {
+    let _ = STORAGE_PATH_OVERRIDE.set(path);
+}
+
 /// Client configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ClientConfig {
@@ -225,8 +233,13 @@ pub fn get_config() -> &'static ClientConfig {
     CONFIG.get().expect("Configuration not initialized. Call init_config() first.")
 }
 
-/// Get the storage path from environment (this must be available before config is loaded)
+/// Get the storage path (CLI arg > env var > current directory)
 pub fn get_storage_path() -> PathBuf {
+    // First check for CLI override
+    if let Some(path) = STORAGE_PATH_OVERRIDE.get() {
+        return path.clone();
+    }
+    // Then check environment variable
     std::env::var("TUNNEL_STORAGE_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."))
