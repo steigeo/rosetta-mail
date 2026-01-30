@@ -450,10 +450,11 @@ impl OutboundSender {
             
             // For DANE-EE (usage 3), we may need to skip CA verification
             // and only verify the certificate against TLSA records
-            let has_dane_ee = security_policy.tlsa_records.iter()
-                .any(|r| r.usage == 3);
+            // IMPORTANT: Only trust DANE-EE if the records were DNSSEC-validated!
+            let has_validated_dane_ee = security_policy.dane_validated 
+                && security_policy.tlsa_records.iter().any(|r| r.usage == 3);
             
-            let config = if has_dane_ee {
+            let config = if has_validated_dane_ee {
                 // DANE-EE: Trust the certificate if it matches TLSA record
                 // Use dangerous configuration that accepts any certificate
                 // We'll verify against TLSA records manually
@@ -538,17 +539,20 @@ impl OutboundSender {
             
             println!("    TLS handshake successful");
             
-            // Verify DANE if we have TLSA records
-            if !security_policy.tlsa_records.is_empty() {
+            // Verify DANE if we have DNSSEC-validated TLSA records
+            if security_policy.dane_validated && !security_policy.tlsa_records.is_empty() {
                 let (_, connection) = tls_stream.get_ref();
                 if let Some(certs) = connection.peer_certificates() {
                     let cert_chain: Vec<_> = certs.to_vec();
                     if !self.security_checker.verify_dane(security_policy, &cert_chain) {
                         return Err("DANE certificate verification failed".to_string());
                     }
+                    println!("    DANE verification successful");
                 } else if security_policy.require_tls {
                     return Err("No peer certificates available for DANE verification".to_string());
                 }
+            } else if !security_policy.tlsa_records.is_empty() {
+                println!("    Warning: TLSA records present but DNSSEC not validated, skipping DANE verification");
             }
             
             // Wrap in BufReader again
