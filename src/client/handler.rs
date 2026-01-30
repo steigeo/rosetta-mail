@@ -1,6 +1,7 @@
 use crate::client::connections::SharedConnectionManager;
 use crate::client::smtp::OutboundSender;
 use crate::proto::{tunnel_message::Payload, CloseConnection, Data, TunnelMessage};
+use crate::{verbose, log_error};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
@@ -45,7 +46,7 @@ pub async fn handle_server_message(
         }
         Some(Payload::OutboundConnectRequest(_)) => {
             // Server should not send connect requests to client
-            eprintln!("Unexpected OutboundConnectRequest from server");
+            log_error!("Unexpected OutboundConnectRequest from server");
         }
         None => {}
     }
@@ -61,12 +62,12 @@ async fn handle_outbound_connect_response(
     outbound_sender: &SharedOutboundSender,
 ) {
     if success {
-        println!(
+        verbose!(
             "Outbound connection {} established to {}",
             connection_id, remote_address
         );
     } else {
-        println!(
+        verbose!(
             "Outbound connection {} failed: {}",
             connection_id, error
         );
@@ -76,7 +77,7 @@ async fn handle_outbound_connect_response(
     let sender = outbound_sender.read().await;
     if sender.is_outbound_connection(connection_id) {
         // This is a response for the outbound sender
-        println!("Routing connect response to outbound sender for connection {}", connection_id);
+        verbose!("Routing connect response to outbound sender for connection {}", connection_id);
         sender.handle_connect_response(connection_id, success, error).await;
     } else {
         // This is for the connection manager
@@ -93,7 +94,7 @@ async fn handle_new_connection(
     tx: &mpsc::Sender<TunnelMessage>,
     conn_manager: &SharedConnectionManager,
 ) {
-    println!(
+    verbose!(
         "New connection: id={}, port={}, remote={}",
         connection_id, port, remote_address
     );
@@ -113,7 +114,7 @@ async fn handle_new_connection(
             })),
         };
         if tx.send(response).await.is_err() {
-            eprintln!(
+            log_error!(
                 "Failed to send initial response for connection {}",
                 connection_id
             );
@@ -126,7 +127,7 @@ async fn handle_new_connection(
             payload: Some(Payload::CloseConnection(CloseConnection { connection_id })),
         };
         if tx.send(close_msg).await.is_err() {
-            eprintln!(
+            log_error!(
                 "Failed to send close message for connection {}",
                 connection_id
             );
@@ -134,7 +135,7 @@ async fn handle_new_connection(
 
         let mut manager = conn_manager.write().await;
         manager.remove_connection(connection_id);
-        println!("Closed connection {} (setup failed)", connection_id);
+        verbose!("Closed connection {} (setup failed)", connection_id);
     }
 }
 
@@ -151,7 +152,7 @@ async fn handle_data(
         let sender = outbound_sender.read().await;
         if sender.is_outbound_connection(connection_id) {
             // This data is for an outbound SMTP connection we initiated
-            println!("Routing {} bytes to outbound sender for connection {}", payload.len(), connection_id);
+            verbose!("Routing {} bytes to outbound sender for connection {}", payload.len(), connection_id);
             sender.handle_data(connection_id, payload).await;
             return;
         }
@@ -162,10 +163,10 @@ async fn handle_data(
         let text = String::from_utf8_lossy(payload);
         let trimmed = text.trim();
         if !trimmed.is_empty() {
-            println!("Data received on connection {}: {}", connection_id, trimmed);
+            verbose!("Data received on connection {}: {}", connection_id, trimmed);
         }
     } else {
-        println!(
+        verbose!(
             "Data received on connection {}: [{} bytes of binary data]",
             connection_id,
             payload.len()
@@ -189,19 +190,19 @@ async fn handle_data(
             })),
         };
         if tx.send(response).await.is_err() {
-            eprintln!("Failed to send response for connection {}", connection_id);
+            log_error!("Failed to send response for connection {}", connection_id);
             return;
         }
     }
 
     // Handle STARTTLS upgrade if needed
     if needs_tls_upgrade {
-        println!("Upgrading connection {} to TLS (STARTTLS)", connection_id);
+        verbose!("Upgrading connection {} to TLS (STARTTLS)", connection_id);
         let mut manager = conn_manager.write().await;
         // Upgrade to TLS - the connection is now ready for TLS handshake
         // The next data packet will be a TLS ClientHello
         if !manager.upgrade_smtp_to_tls(connection_id) {
-            eprintln!("Failed to upgrade connection {} to TLS", connection_id);
+            log_error!("Failed to upgrade connection {} to TLS", connection_id);
         }
     }
 
@@ -211,7 +212,7 @@ async fn handle_data(
             payload: Some(Payload::CloseConnection(CloseConnection { connection_id })),
         };
         if tx.send(close_msg).await.is_err() {
-            eprintln!(
+            log_error!(
                 "Failed to send close message for connection {}",
                 connection_id
             );
@@ -221,13 +222,13 @@ async fn handle_data(
         let mut manager = conn_manager.write().await;
         manager.remove_connection(connection_id);
 
-        println!("Closed connection {}", connection_id);
+        verbose!("Closed connection {}", connection_id);
     }
 }
 
 /// Handle a connection close notification from server
 async fn handle_close(connection_id: u64, conn_manager: &SharedConnectionManager) {
-    println!("Connection {} closed by server", connection_id);
+    verbose!("Connection {} closed by server", connection_id);
 
     let mut manager = conn_manager.write().await;
     manager.remove_connection(connection_id);

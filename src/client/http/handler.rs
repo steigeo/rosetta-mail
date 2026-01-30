@@ -1,4 +1,5 @@
 use super::mta_sts::MtaStsPolicy;
+use crate::verbose;
 
 /// HTTP/HTTPS session for handling web requests
 /// This handles incoming connections on ports 80 and 443
@@ -78,12 +79,12 @@ impl HttpSession {
         // Remove port from host if present
         let host_without_port = host.split(':').next().unwrap_or(host);
 
-        println!("HTTP {} {} (Host: {})", method, path, host);
+        verbose!("HTTP {} {} (Host: {})", method, path, host);
 
         // Only allow requests to mta-sts.<mail_domain>
         let expected_host = format!("mta-sts.{}", self.mail_domain);
         if !host_without_port.eq_ignore_ascii_case(&expected_host) {
-            println!("  Rejected: Host '{}' != expected '{}'", host_without_port, expected_host);
+            verbose!("  Rejected: Host '{}' != expected '{}'", host_without_port, expected_host);
             return self.error_response(404, "Not Found");
         }
 

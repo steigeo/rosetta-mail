@@ -7,6 +7,7 @@
 /// 4. Sending the email with DKIM signature
 
 use crate::client::smtp::outbound::async_client::AsyncSmtpClient;
+use crate::log_error;
 use crate::client::smtp::MailTransaction;
 use crate::proto::TunnelMessage;
 use std::collections::HashMap;
@@ -211,7 +212,7 @@ impl Mailer {
             
             if !rcpt_reply.is_2xx() {
                 // Log but continue with other recipients
-                eprintln!("Warning: RCPT TO <{}> rejected: {} {}", 
+                log_error!("Warning: RCPT TO <{}> rejected: {} {}", 
                     rcpt, rcpt_reply.code, rcpt_reply.lines.join(" "));
             }
         }

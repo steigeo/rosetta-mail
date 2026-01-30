@@ -1,4 +1,5 @@
 use crate::client::dns::{CloudflareClient, DnsRecord, DnsRecordType};
+use crate::verbose;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as BASE64URL, Engine};
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P256_SHA256};
 use reqwest::Client;
@@ -236,7 +237,7 @@ impl AcmeClient {
         let record = DnsRecord::txt(&challenge_domain, &txt_value, 60);
         dns_client.upsert_record(&record).await?;
 
-        println!("Set DNS challenge for {}: {}", challenge_domain, txt_value);
+        verbose!("Set DNS challenge for {}: {}", challenge_domain, txt_value);
 
         // Wait for DNS propagation
         tokio::time::sleep(Duration::from_secs(30)).await;

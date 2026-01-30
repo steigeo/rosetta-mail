@@ -1,6 +1,7 @@
 use super::command::{parse_command, SmtpCommand};
 use super::response::SmtpResponse;
 use super::transaction::MailTransaction;
+use crate::verbose;
 
 /// SMTP session states
 #[derive(Debug, Clone, PartialEq)]
@@ -339,7 +340,7 @@ impl SmtpSession {
             self.data_buffer.clear();
             self.state = SmtpState::Greeted;
 
-            println!(
+            verbose!(
                 "Email received: FROM={} TO={:?} SIZE={} outbound={}",
                 completed.mail_from,
                 completed.rcpt_to,
@@ -540,12 +541,12 @@ impl SmtpSession {
         if let Some(ref accounts) = self.accounts {
             if accounts.verify_password(username, password) {
                 self.authenticated_user = Some(username.to_string());
-                println!("SMTP AUTH: User {} authenticated successfully", username);
+                verbose!("SMTP AUTH: User {} authenticated successfully", username);
                 return (SmtpResponse::auth_successful().to_bytes(), false, None);
             }
         }
         
-        println!("SMTP AUTH: Failed authentication attempt for user {}", username);
+        verbose!("SMTP AUTH: Failed authentication attempt for user {}", username);
         (SmtpResponse::auth_failed().to_bytes(), false, None)
     }
 

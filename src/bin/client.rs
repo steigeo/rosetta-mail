@@ -7,6 +7,7 @@ fn print_usage() {
     eprintln!("Usage: client [OPTIONS] [STORAGE_PATH]");
     eprintln!();
     eprintln!("Options:");
+    eprintln!("  --verbose, -v      Enable verbose logging");
     eprintln!("  --hash-password    Generate an Argon2id password hash for config.toml");
     eprintln!("  --sample-config    Print a sample configuration file");
     eprintln!("  --help             Show this help message");
@@ -16,6 +17,7 @@ fn print_usage() {
     eprintln!();
     eprintln!("Environment:");
     eprintln!("  TUNNEL_STORAGE_PATH  Alternative way to set storage path");
+    eprintln!("  VERBOSE=1            Alternative way to enable verbose logging");
 }
 
 fn hash_password_interactive() {
@@ -62,6 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();
     
     let mut storage_path: Option<PathBuf> = None;
+    let mut verbose = std::env::var("VERBOSE").map(|v| v == "1").unwrap_or(false);
     
     // Check for CLI options
     for arg in &args[1..] {
@@ -69,6 +72,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             "--help" | "-h" => {
                 print_usage();
                 return Ok(());
+            }
+            "--verbose" | "-v" => {
+                verbose = true;
             }
             "--hash-password" => {
                 hash_password_interactive();
@@ -100,6 +106,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install rustls crypto provider");
+
+    // Enable verbose logging if requested
+    client::set_verbose(verbose);
 
     client::run_with_storage_path(storage_path).await
 }

@@ -3,6 +3,7 @@
 /// Implements MTA-STS (RFC 8461) and DANE (RFC 7672) verification
 /// for outbound email connections.
 
+use crate::{log_error, verbose};
 use hickory_resolver::TokioResolver;
 use reqwest::Client;
 use sha2::{Sha256, Sha512, Digest};
@@ -364,10 +365,10 @@ impl DaneClient {
                 
                 if has_rrsig {
                     dnssec_validated = true;
-                    println!("      DANE: TLSA records are DNSSEC-validated");
+                    verbose!("      DANE: TLSA records are DNSSEC-validated");
                 } else {
-                    println!("      DANE: WARNING - TLSA records NOT DNSSEC-signed");
-                    println!("      DANE: Records will be IGNORED for security");
+                    verbose!("      DANE: WARNING - TLSA records NOT DNSSEC-signed");
+                    verbose!("      DANE: Records will be IGNORED for security");
                     // Return empty - unsigned TLSA records are insecure
                     return TlsaLookupResult {
                         records: Vec::new(),
@@ -391,9 +392,9 @@ impl DaneClient {
                 // or if DNSSEC validation failed
                 let err_str = e.to_string();
                 if err_str.contains("DNSSEC") || err_str.contains("dnssec") {
-                    eprintln!("      DANE: DNSSEC validation FAILED for {}: {}", tlsa_name, e);
+                    log_error!("      DANE: DNSSEC validation FAILED for {}: {}", tlsa_name, e);
                 } else {
-                    eprintln!("      DANE: No TLSA records for {}: {}", tlsa_name, e);
+                    log_error!("      DANE: No TLSA records for {}: {}", tlsa_name, e);
                 }
             }
         }
@@ -424,9 +425,9 @@ impl OutboundSecurityChecker {
         let mut policy = SecurityPolicy::none();
         
         // Check MTA-STS
-        println!("      Checking MTA-STS for {}...", domain);
+        verbose!("      Checking MTA-STS for {}...", domain);
         if let Some(mta_sts) = self.mta_sts_client.fetch_policy(domain).await {
-            println!("      MTA-STS: Found policy (mode={:?})", mta_sts.mode);
+            verbose!("      MTA-STS: Found policy (mode={:?})", mta_sts.mode);
             
             if mta_sts.mode == MtaStsMode::Enforce {
                 policy.require_tls = true;
@@ -435,20 +436,20 @@ impl OutboundSecurityChecker {
                 
                 // Verify the MX host is allowed
                 if !mta_sts.is_valid_mx(mx_host) {
-                    println!("      MTA-STS: WARNING - MX host {} not in policy!", mx_host);
+                    verbose!("      MTA-STS: WARNING - MX host {} not in policy!", mx_host);
                 }
             }
         } else {
-            println!("      MTA-STS: No policy found");
+            verbose!("      MTA-STS: No policy found");
         }
         
         // Check DANE
         if let Some(ref dane_client) = self.dane_client {
-            println!("      Checking DANE for {}:{}...", mx_host, port);
+            verbose!("      Checking DANE for {}:{}...", mx_host, port);
             let tlsa_result = dane_client.lookup_tlsa(mx_host, port).await;
             
             if !tlsa_result.records.is_empty() {
-                println!("      DANE: Found {} TLSA record(s), DNSSEC validated: {}", 
+                verbose!("      DANE: Found {} TLSA record(s), DNSSEC validated: {}", 
                          tlsa_result.records.len(), tlsa_result.dnssec_validated);
                 policy.require_tls = true;
                 policy.tlsa_records = tlsa_result.records;
@@ -458,7 +459,7 @@ impl OutboundSecurityChecker {
                     _ => PolicySource::Dane,
                 };
             } else {
-                println!("      DANE: No TLSA records (or DNSSEC validation failed)");
+                verbose!("      DANE: No TLSA records (or DNSSEC validation failed)");
             }
         }
         
@@ -473,19 +474,19 @@ impl OutboundSecurityChecker {
         
         // DANE requires DNSSEC validation for security
         if !policy.dane_validated {
-            println!("      DANE: WARNING - TLSA records not DNSSEC-validated, skipping verification");
+            verbose!("      DANE: WARNING - TLSA records not DNSSEC-validated, skipping verification");
             return true; // Don't enforce unvalidated DANE
         }
         
         // At least one TLSA record must match
         for tlsa in &policy.tlsa_records {
             if tlsa.verify_certificate(cert_chain) {
-                println!("      DANE: Certificate verified against DNSSEC-validated TLSA record");
+                verbose!("      DANE: Certificate verified against DNSSEC-validated TLSA record");
                 return true;
             }
         }
         
-        println!("      DANE: Certificate verification FAILED");
+        verbose!("      DANE: Certificate verification FAILED");
         false
     }
 }

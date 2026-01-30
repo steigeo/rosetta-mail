@@ -5,6 +5,7 @@ use crate::client::smtp::{MailTransaction, SmtpSession};
 use crate::client::storage::EmailStorage;
 use crate::client::tls::certificate::StoredCertificate;
 use crate::client::tls::session::{SniCertResolver, TlsSession};
+use crate::{verbose, log_error};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{oneshot, RwLock};
@@ -685,7 +686,7 @@ impl ConnectionManager {
             ProtocolState::Unknown => {
                 // For unknown protocols, just echo what we received
                 let text = String::from_utf8_lossy(data);
-                println!(
+                verbose!(
                     "Unknown protocol data on connection {}: {}",
                     connection_id,
                     text.trim()
@@ -790,10 +791,10 @@ impl ConnectionManager {
                 smtp_session: new_smtp_session,
             };
             
-            println!("STARTTLS upgrade successful for connection {}", connection_id);
+            verbose!("STARTTLS upgrade successful for connection {}", connection_id);
             true
         } else {
-            eprintln!("STARTTLS upgrade failed: Connection {} is not in SMTP protocol state", connection_id);
+            log_error!("STARTTLS upgrade failed: Connection {} is not in SMTP protocol state", connection_id);
             false
         }
     }

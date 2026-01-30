@@ -1,4 +1,5 @@
 use crate::client::dns::{dane_tlsa_record, CloudflareClient, DnsRecordType};
+use crate::verbose;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::Duration;
@@ -48,7 +49,7 @@ impl DaneManager {
         if path.exists() {
             let data = fs::read_to_string(&path).await?;
             self.rollover = Some(serde_json::from_str(&data)?);
-            println!("Loaded DANE rollover state");
+            verbose!("Loaded DANE rollover state");
         }
         Ok(())
     }
@@ -77,7 +78,7 @@ impl DaneManager {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let record = dane_tlsa_record(hostname, pubkey_hash);
         dns_client.upsert_record(&record).await?;
-        println!("Set initial DANE TLSA record for {}", hostname);
+        verbose!("Set initial DANE TLSA record for {}", hostname);
         Ok(())
     }
 
@@ -89,7 +90,7 @@ impl DaneManager {
         new_hash: &str,
         dns_client: &CloudflareClient,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        println!("Starting DANE rollover for {}", hostname);
+        verbose!("Starting DANE rollover for {}", hostname);
 
         // Add new TLSA record (old one stays)
         let new_record = dane_tlsa_record(hostname, new_hash);

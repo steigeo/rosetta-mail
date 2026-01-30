@@ -6,6 +6,7 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 
 use super::certificate::StoredCertificate;
+use crate::verbose;
 
 /// Certificate resolver that uses SNI to select certificates
 pub struct SniCertResolver {
@@ -79,11 +80,11 @@ impl ResolvesServerCert for SniCertResolver {
         // Try to get SNI from client hello
         if let Some(server_name) = client_hello.server_name() {
             let name_lower = server_name.to_lowercase();
-            println!("TLS SNI requested: {}", name_lower);
+            verbose!("TLS SNI requested: {}", name_lower);
 
             // Try exact match
             if let Some(cert) = self.certificates.get(&name_lower) {
-                println!("  Using certificate for: {}", name_lower);
+                verbose!("  Using certificate for: {}", name_lower);
                 return Some(cert.clone());
             }
 
@@ -91,14 +92,14 @@ impl ResolvesServerCert for SniCertResolver {
             if let Some(dot_pos) = name_lower.find('.') {
                 let wildcard = format!("*{}", &name_lower[dot_pos..]);
                 if let Some(cert) = self.certificates.get(&wildcard) {
-                    println!("  Using wildcard certificate for: {}", wildcard);
+                    verbose!("  Using wildcard certificate for: {}", wildcard);
                     return Some(cert.clone());
                 }
             }
 
-            println!("  No specific certificate found, using default");
+            verbose!("  No specific certificate found, using default");
         } else {
-            println!("TLS: No SNI provided, using default certificate");
+            verbose!("TLS: No SNI provided, using default certificate");
         }
 
         // Fall back to default

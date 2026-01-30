@@ -1,4 +1,5 @@
 use crate::client::smtp::MailTransaction;
+use crate::verbose;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -204,7 +205,7 @@ impl EmailStorage {
             let data_path = messages_dir.join(format!("{}.eml", id));
             fs::write(&data_path, &transaction.data).await?;
 
-            println!(
+            verbose!(
                 "Email stored: id={} uid={} mailbox={} from={} size={}",
                 id, uid, email_lower, metadata.mail_from, metadata.size
             );

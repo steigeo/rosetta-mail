@@ -2,6 +2,7 @@ use crate::client::config::{
     get_cloudflare_api_token, get_cloudflare_zone_id, get_mail_domain, get_server_ip,
     get_server_ipv6, get_smtp_hostname, get_storage_path,
 };
+use crate::{log_error, log_info, verbose};
 use crate::client::dns::{
     a_record, aaaa_record, caa_record_issue, cname_record, dkim_record, dmarc_record, mx_record,
     spf_record_with_ips, CloudflareClient, DnsRecord,
@@ -63,29 +64,29 @@ pub async fn initialize() -> Result<Option<InitResult>, Box<dyn std::error::Erro
         }
     };
 
-    println!("Initializing email infrastructure...");
-    println!("  Hostname: {}", hostname);
-    println!("  Mail domain: {}", mail_domain);
-    println!("  Storage path: {:?}", storage_path);
+    log_info!("Initializing email infrastructure...");
+    verbose!("  Hostname: {}", hostname);
+    verbose!("  Mail domain: {}", mail_domain);
+    verbose!("  Storage path: {:?}", storage_path);
 
     let mut config = EmailConfig::new(hostname.clone(), mail_domain.clone());
 
     // Load or generate DKIM keys
-    println!("\n--- DKIM Setup ---");
+    verbose!("\n--- DKIM Setup ---");
     match DkimKeyPair::load_or_generate(&storage_path).await {
         Ok(keypair) => {
-            println!("DKIM keypair ready");
+            verbose!("DKIM keypair ready");
             config.dkim_keypair = Some(Arc::new(keypair));
         }
         Err(e) => {
-            eprintln!("Warning: Failed to load/generate DKIM keys: {}", e);
+            log_error!("Warning: Failed to load/generate DKIM keys: {}", e);
         }
     }
 
     // Check if we have Cloudflare credentials for DNS management
     let dns_client = match (get_cloudflare_api_token(), get_cloudflare_zone_id()) {
         (Some(token), Some(zone_id)) => {
-            println!("\n--- Cloudflare DNS Setup ---");
+            verbose!("\n--- Cloudflare DNS Setup ---");
             Some(CloudflareClient::new(token, zone_id))
         }
         _ => {
@@ -102,7 +103,7 @@ pub async fn initialize() -> Result<Option<InitResult>, Box<dyn std::error::Erro
 
     // Set up certificates if we have Cloudflare access
     if let Some(ref dns) = dns_client {
-        println!("\n--- Certificate Setup ---");
+        verbose!("\n--- Certificate Setup ---");
         
         let mut cert_manager = CertificateManager::new(&storage_path);
         cert_manager.load().await?;
@@ -116,33 +117,33 @@ pub async fn initialize() -> Result<Option<InitResult>, Box<dyn std::error::Erro
         // Ensure we have a valid certificate for the hostname (SMTP)
         match cert_manager.ensure_hostname_cert(&hostname, dns, &mut dane_manager).await {
             Ok(cert) => {
-                println!("Certificate for {} is valid", hostname);
+                verbose!("Certificate for {} is valid", hostname);
                 config.certificate = Some(cert.clone());
                 config.tls_available = true;
             }
             Err(e) => {
-                eprintln!("Warning: Failed to obtain certificate for {}: {}", hostname, e);
-                eprintln!("STARTTLS will be disabled");
+                log_error!("Warning: Failed to obtain certificate for {}: {}", hostname, e);
+                log_error!("STARTTLS will be disabled");
             }
         }
 
         // Also get a certificate for mta-sts.<mail_domain> (HTTPS)
         match cert_manager.ensure_mta_sts_cert(&mail_domain, dns).await {
             Ok(cert) => {
-                println!("Certificate for {} is valid", cert.domain);
+                verbose!("Certificate for {} is valid", cert.domain);
                 config.mta_sts_certificate = Some(cert.clone());
             }
             Err(e) => {
-                eprintln!("Warning: Failed to obtain certificate for mta-sts.{}: {}", mail_domain, e);
-                eprintln!("MTA-STS HTTPS will not work");
+                log_error!("Warning: Failed to obtain certificate for mta-sts.{}: {}", mail_domain, e);
+                log_error!("MTA-STS HTTPS will not work");
             }
         }
     } else {
-        println!("\nNote: Certificates require Cloudflare DNS for ACME DNS-01 challenges");
+        verbose!("\nNote: Certificates require Cloudflare DNS for ACME DNS-01 challenges");
     }
 
-    println!("\n--- Initialization Complete ---");
-    println!("TLS available: {}", config.tls_available);
+    verbose!("\n--- Initialization Complete ---");
+    log_info!("TLS available: {}", config.tls_available);
 
     Ok(Some(InitResult {
         config: Arc::new(RwLock::new(config)),
@@ -159,12 +160,14 @@ async fn upsert_dns_record(
     match dns.upsert_record_if_changed(record).await {
         Ok((_, changed)) => {
             if changed {
-                println!("  {} [updated]", description);
+                verbose!("  {} [updated]", description);
             } else {
-                println!("  {} [unchanged]", description);
+                verbose!("  {} [unchanged]", description);
             }
         }
-        Err(e) => eprintln!("  Warning: Failed to set {}: {}", description, e),
+        Err(e) => {
+            log_error!("  Warning: Failed to set {}: {}", description, e);
+        }
     }
     Ok(())
 }
@@ -176,7 +179,7 @@ async fn setup_dns_records(
     mail_domain: &str,
     config: &EmailConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    println!("Checking DNS records (only updating if changed)...");
+    verbose!("Checking DNS records (only updating if changed)...");
 
     let server_ipv4 = get_server_ip();
     let server_ipv6 = get_server_ipv6();
@@ -207,7 +210,7 @@ async fn setup_dns_records(
         let caa_mta_sts = caa_record_issue(&mta_sts_host);
         upsert_dns_record(dns, &caa_mta_sts, &format!("CAA {} (letsencrypt.org)", mta_sts_host)).await?;
     } else {
-        println!("  Note: No server IP configured, skipping A/AAAA, CNAME, and CAA records");
+        verbose!("  Note: No server IP configured, skipping A/AAAA, CNAME, and CAA records");
     }
 
     // MX record pointing to our hostname
@@ -234,7 +237,9 @@ async fn setup_dns_records(
                 let dkim = dkim_record(mail_domain, &pubkey);
                 upsert_dns_record(dns, &dkim, "DKIM record (selector: dkim)").await?;
             }
-            Err(e) => eprintln!("  Warning: Failed to get DKIM public key: {}", e),
+            Err(e) => {
+                log_error!("  Warning: Failed to get DKIM public key: {}", e);
+            }
         }
     }
 

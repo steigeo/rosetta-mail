@@ -6,6 +6,7 @@ use crate::client::smtp::MailTransaction;
 use crate::client::smtp::security::{OutboundSecurityChecker, SecurityPolicy};
 use crate::client::tls::dkim::DkimKeyPair;
 use crate::proto::{tunnel_message::Payload, Data, OutboundConnectRequest, CloseConnection, TunnelMessage};
+use crate::{verbose, log_error, log_info};
 use std::collections::HashMap;
 use std::io;
 use std::pin::Pin;
@@ -169,16 +170,16 @@ impl OutboundSender {
         let email_data = if let Some(ref dkim) = self.dkim_keypair {
             match dkim.sign(&transaction.data, &self.dkim_selector, &self.mail_domain) {
                 Ok(signed) => {
-                    println!("  DKIM signed email, new size: {}", signed.len());
+                    verbose!("  DKIM signed email, new size: {}", signed.len());
                     signed
                 }
                 Err(e) => {
-                    eprintln!("  Warning: DKIM signing failed: {}", e);
+                    log_error!("  Warning: DKIM signing failed: {}", e);
                     transaction.data.clone()
                 }
             }
         } else {
-            println!("  Warning: No DKIM keypair, sending unsigned");
+            verbose!("  Warning: No DKIM keypair, sending unsigned");
             transaction.data.clone()
         };
 
@@ -193,7 +194,7 @@ impl OutboundSender {
         // Send to each domain
         let mut errors = Vec::new();
         for (domain, recipients) in by_domain {
-            println!("  Sending to domain: {} ({} recipients)", domain, recipients.len());
+            verbose!("  Sending to domain: {} ({} recipients)", domain, recipients.len());
             
             if let Err(e) = self.send_to_domain(&domain, &transaction.mail_from, &recipients, &email_data).await {
                 errors.push(format!("{}: {}", domain, e));
@@ -218,7 +219,7 @@ impl OutboundSender {
         // Look up MX records
         let mx_hosts = self.lookup_mx(domain).await?;
         
-        println!("    MX records for {}: {:?}", domain, mx_hosts);
+        verbose!("    MX records for {}: {:?}", domain, mx_hosts);
 
         if mx_hosts.is_empty() {
             // No MX, try A record (domain itself)
@@ -249,7 +250,7 @@ impl OutboundSender {
                     }
                 }
                 if !mx_valid {
-                    println!("    MTA-STS: Skipping MX {} (not in policy)", mx_host);
+                    verbose!("    MTA-STS: Skipping MX {} (not in policy)", mx_host);
                     last_error = format!("MX host {} not allowed by MTA-STS policy", mx_host);
                     continue;
                 }
@@ -258,7 +259,7 @@ impl OutboundSender {
             match self.try_send_to_host(&mx_host, 25, mail_from, recipients, email_data, &policy).await {
                 Ok(()) => return Ok(()),
                 Err(e) => {
-                    println!("    Failed to send to {}: {}", mx_host, e);
+                    verbose!("    Failed to send to {}: {}", mx_host, e);
                     last_error = e;
                 }
             }
@@ -283,7 +284,7 @@ impl OutboundSender {
             }
             Err(e) => {
                 // No MX records, return empty (caller will try A record)
-                println!("    No MX records for {}: {}", domain, e);
+                verbose!("    No MX records for {}: {}", domain, e);
                 Ok(vec![])
             }
         }
@@ -299,8 +300,8 @@ impl OutboundSender {
         email_data: &[u8],
         security_policy: &SecurityPolicy,
     ) -> Result<(), String> {
-        println!("    Connecting to {}:{}...", host, port);
-        println!("    Security: require_tls={}, dane_records={}, dane_validated={}", 
+        verbose!("    Connecting to {}:{}...", host, port);
+        verbose!("    Security: require_tls={}, dane_records={}, dane_validated={}", 
                  security_policy.require_tls, 
                  security_policy.tlsa_records.len(),
                  security_policy.dane_validated);
@@ -348,7 +349,7 @@ impl OutboundSender {
 
         connect_result?;
 
-        println!("    Connected to {}:{}", host, port);
+        verbose!("    Connected to {}:{}", host, port);
 
         // Create tunnel stream
         let stream = TunnelStream::new(conn_id, self.tunnel_tx.clone(), data_rx);
@@ -391,20 +392,20 @@ impl OutboundSender {
         
         // Read greeting
         let greeting = read_line(&mut reader).await?;
-        println!("    < {}", greeting);
+        verbose!("    < {}", greeting);
         if !greeting.starts_with("220") {
             return Err(format!("Bad greeting: {}", greeting));
         }
 
         // Send EHLO
         write_line(&mut reader, &format!("EHLO {}", self.hostname)).await?;
-        println!("    > EHLO {}", self.hostname);
+        verbose!("    > EHLO {}", self.hostname);
         
         // Read EHLO response (may be multiline) and check for STARTTLS
         let mut has_starttls = false;
         loop {
             let line = read_line(&mut reader).await?;
-            println!("    < {}", line);
+            verbose!("    < {}", line);
             
             // Check for STARTTLS capability
             if line.to_uppercase().contains("STARTTLS") {
@@ -426,20 +427,20 @@ impl OutboundSender {
 
         // If STARTTLS is offered, upgrade the connection
         if has_starttls {
-            println!("    Server offers STARTTLS, upgrading connection...");
+            verbose!("    Server offers STARTTLS, upgrading connection...");
             
             // Send STARTTLS command
             write_line(&mut reader, "STARTTLS").await?;
-            println!("    > STARTTLS");
+            verbose!("    > STARTTLS");
             
             let starttls_resp = read_line(&mut reader).await?;
-            println!("    < {}", starttls_resp);
+            verbose!("    < {}", starttls_resp);
             
             if !starttls_resp.starts_with("220") {
                 if security_policy.require_tls {
                     return Err(format!("TLS required by policy but STARTTLS failed: {}", starttls_resp));
                 }
-                println!("    Warning: STARTTLS not accepted: {}", starttls_resp);
+                verbose!("    Warning: STARTTLS not accepted: {}", starttls_resp);
                 // Continue without TLS
                 return self.smtp_send_mail(reader, mail_from, recipients, email_data).await;
             }
@@ -537,7 +538,7 @@ impl OutboundSender {
             let tls_stream = connector.connect(server_name, inner_stream).await
                 .map_err(|e| format!("TLS handshake failed: {}", e))?;
             
-            println!("    TLS handshake successful");
+            verbose!("    TLS handshake successful");
             
             // Verify DANE if we have DNSSEC-validated TLSA records
             if security_policy.dane_validated && !security_policy.tlsa_records.is_empty() {
@@ -547,12 +548,12 @@ impl OutboundSender {
                     if !self.security_checker.verify_dane(security_policy, &cert_chain) {
                         return Err("DANE certificate verification failed".to_string());
                     }
-                    println!("    DANE verification successful");
+                    verbose!("    DANE verification successful");
                 } else if security_policy.require_tls {
                     return Err("No peer certificates available for DANE verification".to_string());
                 }
             } else if !security_policy.tlsa_records.is_empty() {
-                println!("    Warning: TLSA records present but DNSSEC not validated, skipping DANE verification");
+                verbose!("    Warning: TLSA records present but DNSSEC not validated, skipping DANE verification");
             }
             
             // Wrap in BufReader again
@@ -560,12 +561,12 @@ impl OutboundSender {
             
             // After TLS upgrade, need to send EHLO again
             write_line(&mut tls_reader, &format!("EHLO {}", self.hostname)).await?;
-            println!("    > EHLO {}", self.hostname);
+            verbose!("    > EHLO {}", self.hostname);
             
             // Read new EHLO response
             loop {
                 let line = read_line(&mut tls_reader).await?;
-                println!("    < {}", line);
+                verbose!("    < {}", line);
                 if line.len() >= 4 && line.chars().nth(3) == Some(' ') {
                     if !line.starts_with("250") {
                         return Err(format!("EHLO rejected after STARTTLS: {}", line));
@@ -577,7 +578,7 @@ impl OutboundSender {
             // Continue with TLS stream
             return self.smtp_send_mail(tls_reader, mail_from, recipients, email_data).await;
         } else {
-            println!("    Warning: Server does not offer STARTTLS, continuing unencrypted");
+            verbose!("    Warning: Server does not offer STARTTLS, continuing unencrypted");
         }
 
         // Continue without TLS
@@ -594,9 +595,9 @@ impl OutboundSender {
     ) -> Result<(), String> {
         // MAIL FROM
         write_line(&mut stream, &format!("MAIL FROM:<{}>", mail_from)).await?;
-        println!("    > MAIL FROM:<{}>", mail_from);
+        verbose!("    > MAIL FROM:<{}>", mail_from);
         let mail_resp = read_line(&mut stream).await?;
-        println!("    < {}", mail_resp);
+        verbose!("    < {}", mail_resp);
         if !mail_resp.starts_with("250") {
             return Err(format!("MAIL FROM rejected: {}", mail_resp));
         }
@@ -604,19 +605,19 @@ impl OutboundSender {
         // RCPT TO for each recipient
         for rcpt in recipients {
             write_line(&mut stream, &format!("RCPT TO:<{}>", rcpt)).await?;
-            println!("    > RCPT TO:<{}>", rcpt);
+            verbose!("    > RCPT TO:<{}>", rcpt);
             let rcpt_resp = read_line(&mut stream).await?;
-            println!("    < {}", rcpt_resp);
+            verbose!("    < {}", rcpt_resp);
             if !rcpt_resp.starts_with("250") {
-                println!("    Warning: RCPT TO rejected for {}: {}", rcpt, rcpt_resp);
+                verbose!("    Warning: RCPT TO rejected for {}: {}", rcpt, rcpt_resp);
             }
         }
 
         // DATA
         write_line(&mut stream, "DATA").await?;
-        println!("    > DATA");
+        verbose!("    > DATA");
         let data_resp = read_line(&mut stream).await?;
-        println!("    < {}", data_resp);
+        verbose!("    < {}", data_resp);
         if !data_resp.starts_with("354") {
             return Err(format!("DATA rejected: {}", data_resp));
         }
@@ -632,20 +633,20 @@ impl OutboundSender {
         }
         stream.get_mut().write_all(b".\r\n").await.map_err(|e| e.to_string())?;
         stream.get_mut().flush().await.map_err(|e| e.to_string())?;
-        println!("    > [email data, {} bytes]", email_data.len());
+        verbose!("    > [email data, {} bytes]", email_data.len());
 
         // Read DATA response
         let final_resp = read_line(&mut stream).await?;
-        println!("    < {}", final_resp);
+        verbose!("    < {}", final_resp);
         if !final_resp.starts_with("250") {
             return Err(format!("Message rejected: {}", final_resp));
         }
 
         // QUIT
         write_line(&mut stream, "QUIT").await?;
-        println!("    > QUIT");
+        verbose!("    > QUIT");
 
-        println!("    Email sent successfully!");
+        log_info!("    Email sent successfully!");
         Ok(())
     }
 

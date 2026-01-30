@@ -8,6 +8,7 @@ use rsa::{
 };
 use std::path::Path;
 use tokio::fs;
+use crate::verbose;
 
 const DKIM_KEY_SIZE: usize = 2048;
 
@@ -37,7 +38,7 @@ impl DkimKeyPair {
         let private_key_path = storage_path.join("dkim_private.pem");
 
         if private_key_path.exists() {
-            println!("Loading existing DKIM key pair...");
+            verbose!("Loading existing DKIM key pair...");
             let private_pem = fs::read_to_string(&private_key_path).await?;
             let private_key = RsaPrivateKey::from_pkcs8_pem(&private_pem)?;
             let public_key = RsaPublicKey::from(&private_key);
@@ -46,7 +47,7 @@ impl DkimKeyPair {
                 public_key,
             })
         } else {
-            println!("Generating new DKIM key pair...");
+            verbose!("Generating new DKIM key pair...");
             let keypair = Self::generate()?;
             keypair.save(storage_path).await?;
             Ok(keypair)
@@ -66,7 +67,7 @@ impl DkimKeyPair {
         let public_pem = self.public_key.to_pkcs1_pem(LineEnding::LF)?;
         fs::write(&public_key_path, public_pem).await?;
 
-        println!("DKIM keys saved to {:?}", storage_path);
+        verbose!("DKIM keys saved to {:?}", storage_path);
         Ok(())
     }
 
