@@ -390,11 +390,18 @@ impl OutboundSender {
         
         let mut reader = BufReader::new(stream);
         
-        // Read greeting
-        let greeting = read_line(&mut reader).await?;
-        verbose!("    < {}", greeting);
-        if !greeting.starts_with("220") {
-            return Err(format!("Bad greeting: {}", greeting));
+        // Read greeting (may be multiline - wait for "220 " not "220-")
+        loop {
+            let greeting = read_line(&mut reader).await?;
+            verbose!("    < {}", greeting);
+            if !greeting.starts_with("220") {
+                return Err(format!("Bad greeting: {}", greeting));
+            }
+            // Check if this is the final line (space after 220, not dash)
+            if greeting.len() >= 4 && greeting.chars().nth(3) != Some('-') {
+                break;
+            }
+            // Otherwise it's "220-..." meaning more lines to come
         }
 
         // Send EHLO
