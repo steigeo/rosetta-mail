@@ -1,7 +1,7 @@
 /// Server configuration constants
 /// TCP ports to listen on:
 /// - 25: SMTP (receiving mail)
-/// - 80: HTTP (for ACME HTTP-01 challenges and redirects)
+/// - 80: HTTP (for redirects to HTTPS)
 /// - 443: HTTPS (for MTA-STS policy serving)
 /// - 143: IMAP (explicit TLS via STARTTLS)
 /// - 465: SMTP Submission (implicit TLS)
