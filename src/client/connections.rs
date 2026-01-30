@@ -354,7 +354,7 @@ impl ConnectionManager {
                 let plaintext = match tls_session.process_incoming(data) {
                     Ok(pt) => pt,
                     Err(e) => {
-                        eprintln!("TLS error processing incoming SMTP data: {}", e);
+                        verbose!("TLS error processing incoming SMTP data: {}", e);
                         return (None, true);
                     }
                 };
@@ -363,7 +363,7 @@ impl ConnectionManager {
                 let mut response_ciphertext = match tls_session.get_pending_ciphertext() {
                     Ok(ct) => ct,
                     Err(e) => {
-                        eprintln!("TLS error getting pending ciphertext: {}", e);
+                        verbose!("TLS error getting pending ciphertext: {}", e);
                         return (None, true);
                     }
                 };
@@ -395,7 +395,7 @@ impl ConnectionManager {
                                 response_ciphertext.extend(encrypted);
                             }
                             Err(e) => {
-                                eprintln!("TLS error encrypting SMTP response: {}", e);
+                                verbose!("TLS error encrypting SMTP response: {}", e);
                                 return (None, true);
                             }
                         }
@@ -427,7 +427,7 @@ impl ConnectionManager {
                 let plaintext = match tls_session.process_incoming(data) {
                     Ok(pt) => pt,
                     Err(e) => {
-                        eprintln!("TLS error processing incoming data: {}", e);
+                        verbose!("TLS error processing incoming data: {}", e);
                         return (None, true);
                     }
                 };
@@ -436,7 +436,7 @@ impl ConnectionManager {
                 let mut response_ciphertext = match tls_session.get_pending_ciphertext() {
                     Ok(ct) => ct,
                     Err(e) => {
-                        eprintln!("TLS error getting pending ciphertext: {}", e);
+                        verbose!("TLS error getting pending ciphertext: {}", e);
                         return (None, true);
                     }
                 };
@@ -460,7 +460,7 @@ impl ConnectionManager {
                                 response_ciphertext.extend(encrypted);
                             }
                             Err(e) => {
-                                eprintln!("TLS error encrypting response: {}", e);
+                                verbose!("TLS error encrypting response: {}", e);
                                 return (None, true);
                             }
                         }
@@ -517,7 +517,7 @@ impl ConnectionManager {
                 let plaintext = match tls_session.process_incoming(data) {
                     Ok(pt) => pt,
                     Err(e) => {
-                        eprintln!("TLS error processing incoming submission data: {}", e);
+                        verbose!("TLS error processing incoming submission data: {}", e);
                         return (None, true);
                     }
                 };
@@ -526,7 +526,7 @@ impl ConnectionManager {
                 let mut response_ciphertext = match tls_session.get_pending_ciphertext() {
                     Ok(ct) => ct,
                     Err(e) => {
-                        eprintln!("TLS error getting pending ciphertext: {}", e);
+                        verbose!("TLS error getting pending ciphertext: {}", e);
                         return (None, true);
                     }
                 };
@@ -549,7 +549,7 @@ impl ConnectionManager {
                                 response_ciphertext.extend(encrypted);
                             }
                             Err(e) => {
-                                eprintln!("TLS error encrypting greeting: {}", e);
+                                verbose!("TLS error encrypting greeting: {}", e);
                                 return (None, true);
                             }
                         }
@@ -575,7 +575,7 @@ impl ConnectionManager {
                                 response_ciphertext.extend(encrypted);
                             }
                             Err(e) => {
-                                eprintln!("TLS error encrypting submission response: {}", e);
+                                verbose!("TLS error encrypting submission response: {}", e);
                                 return (None, true);
                             }
                         }
@@ -615,7 +615,7 @@ impl ConnectionManager {
                 let plaintext = match tls_session.process_incoming(data) {
                     Ok(pt) => pt,
                     Err(e) => {
-                        eprintln!("TLS error processing incoming IMAP data: {}", e);
+                        verbose!("TLS error processing incoming IMAP data: {}", e);
                         return (None, true);
                     }
                 };
@@ -624,7 +624,7 @@ impl ConnectionManager {
                 let mut response_ciphertext = match tls_session.get_pending_ciphertext() {
                     Ok(ct) => ct,
                     Err(e) => {
-                        eprintln!("TLS error getting pending ciphertext: {}", e);
+                        verbose!("TLS error getting pending ciphertext: {}", e);
                         return (None, true);
                     }
                 };
@@ -645,7 +645,7 @@ impl ConnectionManager {
                             response_ciphertext.extend(encrypted);
                         }
                         Err(e) => {
-                            eprintln!("TLS error encrypting IMAP greeting: {}", e);
+                            verbose!("TLS error encrypting IMAP greeting: {}", e);
                             return (None, true);
                         }
                     }
@@ -662,7 +662,7 @@ impl ConnectionManager {
                                 response_ciphertext.extend(encrypted);
                             }
                             Err(e) => {
-                                eprintln!("TLS error encrypting IMAP response: {}", e);
+                                verbose!("TLS error encrypting IMAP response: {}", e);
                                 return (None, true);
                             }
                         }
