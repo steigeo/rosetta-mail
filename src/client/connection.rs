@@ -2,9 +2,10 @@ use crate::client::config::{get_auth_key, get_config, get_server_url, get_storag
 use crate::client::connections::ConnectionManager;
 use crate::client::handler::handle_server_message;
 use crate::client::init::initialize;
-use crate::client::smtp::{MailTransaction, OutboundSender};
+use crate::client::smtp::{create_shared_outbox, generate_bounce_message, MailTransaction, OutboundSender};
 use crate::client::storage::EmailStorage;
 use crate::proto::TunnelMessage;
+use crate::{log_error, log_info, verbose};
 use futures_util::{SinkExt, StreamExt};
 use prost::Message;
 use std::path::PathBuf;
@@ -159,14 +160,95 @@ pub async fn run_with_storage_path(storage_path: Option<PathBuf>) -> Result<(), 
         }
     };
 
+    // Create outbox for failed emails
+    let outbox = create_shared_outbox();
+
     // Task to process outbound emails
     let outbound_sender_task = outbound_sender.clone();
+    let outbox_task = outbox.clone();
     let outbound_task = async move {
         while let Some(transaction) = outbound_rx.recv().await {
-            println!("Processing outbound email to: {:?}", transaction.rcpt_to);
+            log_info!("Processing outbound email to: {:?}", transaction.rcpt_to);
             let sender = outbound_sender_task.read().await;
             if let Err(e) = sender.send(&transaction).await {
-                eprintln!("Failed to send outbound email: {}", e);
+                log_error!("Failed to send outbound email: {}", e);
+                // Queue for retry
+                let outbox = outbox_task.read().await;
+                if let Err(queue_err) = outbox.queue(&transaction, e).await {
+                    log_error!("Failed to queue email for retry: {}", queue_err);
+                }
+            }
+        }
+    };
+
+    // Task to retry queued emails periodically
+    let outbound_sender_retry = outbound_sender.clone();
+    let outbox_retry = outbox.clone();
+    let email_storage_retry = email_storage.clone();
+    let hostname_for_retry = hostname.clone();
+    let retry_task = async move {
+        // Check for queued emails every 5 minutes
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+        loop {
+            interval.tick().await;
+            
+            let outbox = outbox_retry.read().await;
+            let queued = match outbox.load_all().await {
+                Ok(q) => q,
+                Err(e) => {
+                    verbose!("Failed to load outbox: {}", e);
+                    continue;
+                }
+            };
+            drop(outbox); // Release lock
+
+            if queued.is_empty() {
+                continue;
+            }
+
+            verbose!("Checking {} queued emails for retry", queued.len());
+
+            for mut email in queued {
+                if email.is_expired() {
+                    // Generate bounce message
+                    log_info!("Email {} expired after 24h, generating bounce", email.id);
+                    let bounce = generate_bounce_message(&email, &hostname_for_retry);
+                    
+                    // Deliver bounce to sender's mailbox if local
+                    if let Err(e) = email_storage_retry.store_email(&bounce).await {
+                        log_error!("Failed to store bounce message: {}", e);
+                    }
+
+                    // Remove from outbox
+                    let outbox = outbox_retry.read().await;
+                    if let Err(e) = outbox.remove(&email.id).await {
+                        log_error!("Failed to remove expired email from outbox: {}", e);
+                    }
+                } else if email.is_ready_for_retry() {
+                    verbose!("Retrying email {} (attempt {})", email.id, email.attempts + 1);
+                    let transaction = email.to_transaction();
+                    let sender = outbound_sender_retry.read().await;
+                    
+                    match sender.send(&transaction).await {
+                        Ok(()) => {
+                            log_info!("Queued email {} sent successfully on retry", email.id);
+                            drop(sender);
+                            let outbox = outbox_retry.read().await;
+                            if let Err(e) = outbox.remove(&email.id).await {
+                                log_error!("Failed to remove sent email from outbox: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            verbose!("Retry failed for email {}: {}", email.id, e);
+                            email.record_failure(e);
+                            drop(sender);
+                            let outbox = outbox_retry.read().await;
+                            if let Err(e) = outbox.update(&email).await {
+                                log_error!("Failed to update queued email: {}", e);
+                            }
+                        }
+                    }
+                }
             }
         }
     };
@@ -214,6 +296,7 @@ pub async fn run_with_storage_path(storage_path: Option<PathBuf>) -> Result<(), 
         _ = send_task => {},
         _ = recv_task => {},
         _ = outbound_task => {},
+        _ = retry_task => {},
     }
 
     println!("Disconnected from server");
